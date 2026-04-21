@@ -1,0 +1,458 @@
+import pandas as pd
+import numpy as np
+from collections import Counter
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
+bin_ranges = {}
+class_names = []
+
+
+# -------------------------
+# IMPURITY FUNCTIONS
+# -------------------------
+
+def entropy(y):
+    counts = np.bincount(y)
+    probs = counts / len(y)
+    return -np.sum([p * np.log2(p) for p in probs if p > 0])
+
+
+def gini(y):
+    counts = np.bincount(y)
+    probs = counts / len(y)
+    return 1 - np.sum([p ** 2 for p in probs])
+
+
+# -------------------------
+# INFORMATION GAIN
+# -------------------------
+
+def information_gain(X_column, y, criterion, feature_name="", show_steps=False):
+
+    X_column = np.array(X_column)
+    parent_loss = criterion(y)
+
+    if show_steps:
+        print("\n--------------------------------")
+        print("Feature:", feature_name)
+        print("Parent impurity:", round(parent_loss,4))
+
+    values, counts = np.unique(X_column, return_counts=True)
+
+    weighted_loss = 0
+
+    for v, count in zip(values, counts):
+
+        y_subset = y[X_column == v]
+
+        loss = criterion(y_subset)
+        weight = count / len(y)
+
+        weighted_loss += weight * loss
+
+        if show_steps:
+            print("\nValue =", v)
+            print("Subset =", y_subset)
+            print("Impurity =", round(loss,4))
+            print("Weight =", round(weight,4))
+            print("Weighted impurity =", round(weight*loss,4))
+
+    gain = parent_loss - weighted_loss
+
+    if show_steps:
+        print("Total weighted impurity =", round(weighted_loss,4))
+        print("Information Gain =", round(gain,4))
+
+    return gain
+
+
+# -------------------------
+# MANUAL MODE
+# -------------------------
+
+def manual_mode():
+
+    rows = int(input("No of rows: "))
+    cols = int(input("No of attributes: "))
+
+    feature_names = [input(f"Attribute {i+1} name: ") for i in range(cols)]
+    class_name = input("Class name: ")
+
+    data = []
+
+    for i in range(rows):
+
+        row = []
+
+        for j in range(cols):
+            row.append(input(f"Row {i+1} - {feature_names[j]}: "))
+
+        row.append(input(f"Row {i+1} - {class_name}: "))
+
+        data.append(row)
+
+    X = [row[:-1] for row in data]
+    y_labels = [row[-1] for row in data]
+
+    unique_classes = list(set(y_labels))
+    class_map = {label: i for i, label in enumerate(unique_classes)}
+
+    y = np.array([class_map[label] for label in y_labels])
+
+    print("\n1. Entropy")
+    print("2. Gini Index")
+
+    choice = int(input("Choose criterion: "))
+
+    criterion = entropy if choice == 1 else gini
+
+    best_gain = -1
+    best_feature = None
+
+    for col in range(cols):
+
+        column = [row[col] for row in X]
+
+        gain = information_gain(
+            column,
+            y,
+            criterion,
+            feature_names[col],
+            True
+        )
+
+        if gain > best_gain:
+            best_gain = gain
+            best_feature = feature_names[col]
+
+    print("\n=================================")
+    print("FINAL ROOT NODE:", best_feature)
+    print("=================================")
+
+
+# -------------------------
+# TREE NODE
+# -------------------------
+
+class Node:
+
+    def __init__(self, feature=None, label=None):
+
+        self.feature = feature
+        self.label = label
+        self.children = {}
+
+
+# -------------------------
+# BUILD TREE
+# -------------------------
+
+def build_tree(X, y):
+
+    if len(set(y)) == 1:
+        return Node(label=y[0])
+
+    if len(X.columns) == 0:
+        return Node(label=Counter(y).most_common(1)[0][0])
+
+    gains = []
+
+    for col in X.columns:
+        gains.append(information_gain(X[col].values, y, entropy))
+
+    best_feature = X.columns[np.argmax(gains)]
+
+    tree = Node(feature=best_feature)
+
+    values = np.unique(X[best_feature])
+
+    for v in values:
+
+        sub_X = X[X[best_feature] == v].drop(columns=[best_feature])
+        sub_y = y[X[best_feature] == v]
+
+        if len(sub_X) == 0:
+            tree.children[v] = Node(label=Counter(y).most_common(1)[0][0])
+        else:
+            tree.children[v] = build_tree(sub_X.reset_index(drop=True), sub_y)
+
+    return tree
+
+def print_tree(node, indent=""):
+
+    if node.label is not None:
+        print(indent + "Class -> " + str(class_names[node.label]))
+        return
+
+    print(indent + node.feature)
+
+    for value, child in node.children.items():
+
+        if node.feature in bin_ranges:
+            value_text = bin_ranges[node.feature][value]
+        else:
+            value_text = value
+
+        print(indent + " " + str(value_text))
+
+        print_tree(child, indent + "   ")
+def predict(tree, x):
+
+    if tree.label is not None:
+        return tree.label
+
+    value = x[tree.feature]
+
+    if value in tree.children:
+        return predict(tree.children[value], x)
+    else:
+        return None
+
+
+# -------------------------
+# CSV MODE
+# -------------------------
+
+def csv_mode():
+
+    global bin_ranges
+    global class_names
+
+    path = input("CSV path: ")
+
+    df = pd.read_csv(path)
+
+    print("Columns:", list(df.columns))
+
+    feature_cols = [c.strip() for c in input("Feature columns: ").split(",")]
+    class_col = input("Class column: ")
+
+    # Convert numeric features to bins
+    for col in feature_cols:
+
+        if df[col].dtype != 'object':
+
+            df[col], bins = pd.cut(df[col], bins=5, labels=False, retbins=True)
+
+            ranges = []
+
+            for i in range(len(bins)-1):
+                ranges.append(f"{round(bins[i],1)} - {round(bins[i+1],1)}")
+
+            bin_ranges[col] = ranges
+
+    X = df[feature_cols]
+
+    y, uniques = pd.factorize(df[class_col])
+    class_names = ["Non-Diabetic", "Diabetic"]
+
+    class_names = list(uniques)
+
+    train_percent = float(input("Train percentage: "))
+    test_size = 1 - train_percent / 100
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=42
+    )
+
+    print("\nNumber of Train Records:", len(X_train))
+    print("Number of Test Records:", len(X_test))
+
+    tree = build_tree(X_train.reset_index(drop=True), y_train)
+
+    print("\nFINAL DECISION TREE\n")
+
+    print_tree(tree)
+
+    predictions = []
+
+    for i in range(len(X_test)):
+
+        pred = predict(tree, X_test.iloc[i])
+
+        if pred is None:
+            pred = Counter(y_train).most_common(1)[0][0]
+
+        predictions.append(pred)
+
+    print("\nPERFORMANCE METRICS")
+
+    print("Accuracy :", accuracy_score(y_test, predictions))
+    print("Precision:", precision_score(y_test, predictions, average='weighted', zero_division=0))
+    print("Recall   :", recall_score(y_test, predictions, average='weighted', zero_division=0))
+    print("F1 Score :", f1_score(y_test, predictions, average='weighted', zero_division=0))
+
+    print("\nConfusion Matrix\n", confusion_matrix(y_test, predictions))
+
+
+# -------------------------
+# MAIN
+# -------------------------
+
+def main():
+
+    print("\nDecision Tree")
+
+    print("1. Manual Mode (Root Only)")
+    print("2. CSV Mode (Full Tree)")
+
+    choice = int(input("Enter choice: "))
+
+    if choice == 1:
+        manual_mode()
+
+    elif choice == 2:
+        csv_mode()
+
+    else:
+        print("Invalid choice")
+
+
+if __name__ == "__main__":
+    main()
+
+Decision Tree
+1. Manual Mode (Root Only)
+2. CSV Mode (Full Tree)
+Enter choice: 1
+No of rows: 10
+No of attributes: 4
+Attribute 1 name: green
+Attribute 2 name: legs
+Attribute 3 name: height
+Attribute 4 name: smelly
+Class name: species
+Row 1 - green: N
+Row 1 - legs: 3
+Row 1 - height: S
+Row 1 - smelly: Y
+Row 1 - species: M
+Row 2 - green: Y
+Row 2 - legs: 2
+Row 2 - height: T
+Row 2 - smelly: N
+Row 2 - species: M
+Row 3 - green: Y
+Row 3 - legs: 3
+Row 3 - height: T
+Row 3 - smelly: N
+Row 3 - species: M
+Row 4 - green: N
+Row 4 - legs: 2
+Row 4 - height: S
+Row 4 - smelly: Y
+Row 4 - species: M
+Row 5 - green: Y
+Row 5 - legs: 3
+Row 5 - height: T
+Row 5 - smelly: N
+Row 5 - species: M
+Row 6 - green: N
+Row 6 - legs: 2
+Row 6 - height: T
+Row 6 - smelly: Y
+Row 6 - species: H
+Row 7 - green: N
+Row 7 - legs: 2
+Row 7 - height: S
+Row 7 - smelly: N
+Row 7 - species: H
+Row 8 - green: N
+Row 8 - legs: 2
+Row 8 - height: T
+Row 8 - smelly: N
+Row 8 - species: H
+Row 9 - green: Y
+Row 9 - legs: 2
+Row 9 - height: S
+Row 9 - smelly: N
+Row 9 - species: H
+Row 10 - green: N
+Row 10 - legs: 2
+Row 10 - height: T
+Row 10 - smelly: Y
+Row 10 - species: H
+
+1. Entropy
+2. Gini Index
+Choose criterion: 2
+
+--------------------------------
+Feature: green
+Parent impurity: 0.5
+
+Value = N
+Subset = [1 1 0 0 0 0]
+Impurity = 0.4444
+Weight = 0.6
+Weighted impurity = 0.2667
+
+Value = Y
+Subset = [1 1 1 0]
+Impurity = 0.375
+Weight = 0.4
+Weighted impurity = 0.15
+Total weighted impurity = 0.4167
+Information Gain = 0.0833
+
+--------------------------------
+Feature: legs
+Parent impurity: 0.5
+
+Value = 2
+Subset = [1 1 0 0 0 0 0]
+Impurity = 0.4082
+Weight = 0.7
+Weighted impurity = 0.2857
+
+Value = 3
+Subset = [1 1 1]
+Impurity = 0.0
+Weight = 0.3
+Weighted impurity = 0.0
+Total weighted impurity = 0.2857
+Information Gain = 0.2143
+
+--------------------------------
+Feature: height
+Parent impurity: 0.5
+
+Value = S
+Subset = [1 1 0 0]
+Impurity = 0.5
+Weight = 0.4
+Weighted impurity = 0.2
+
+Value = T
+Subset = [1 1 1 0 0 0]
+Impurity = 0.5
+Weight = 0.6
+Weighted impurity = 0.3
+Total weighted impurity = 0.5
+Information Gain = 0.0
+
+--------------------------------
+Feature: smelly
+Parent impurity: 0.5
+
+Value = N
+Subset = [1 1 1 0 0 0]
+Impurity = 0.5
+Weight = 0.6
+Weighted impurity = 0.3
+
+Value = Y
+Subset = [1 1 0 0]
+Impurity = 0.5
+Weight = 0.4
+Weighted impurity = 0.2
+Total weighted impurity = 0.5
+Information Gain = 0.0
+
+=================================
+FINAL ROOT NODE: legs
+=================================

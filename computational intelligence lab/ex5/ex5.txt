@@ -1,0 +1,658 @@
+import random
+
+# ==============================
+# SETUP ENVIRONMENT
+# ==============================
+
+def create_world():
+    n_input = input("Enter number of rooms (>=4): ")
+    n = int(n_input) if n_input.isdigit() else 4
+    if n < 4:
+        print("Grid must be at least 4x4. Setting to 4.")
+        n = 4
+
+    world = {}
+    sensors = {}
+    cell_number = 1
+
+    for i in range(1, n+1):
+        for j in range(1, n+1):
+            world[(i,j)] = {
+                "number": cell_number,
+                "wampus": False,
+                "pit": False,
+                "gold": False
+            }
+            sensors[(i,j)] = {
+                "stench": False,
+                "breeze": False,
+                "glitter": False
+            }
+            cell_number += 1
+
+    start = (1,1)
+
+    # Place Wampus
+    while True:
+        wampus = (random.randint(1,n), random.randint(1,n))
+        if wampus != start:
+            world[wampus]["wampus"] = True
+            break
+
+    # Place Gold
+    while True:
+        gold = (random.randint(1,n), random.randint(1,n))
+        if gold != start and not world[gold]["wampus"]:
+            world[gold]["gold"] = True
+            sensors[gold]["glitter"] = True
+            break
+
+    # 20% pits
+    pit_count = int(0.2 * (n*n))
+    placed = 0
+    while placed < pit_count:
+        pit = (random.randint(1,n), random.randint(1,n))
+        if pit != start and not world[pit]["wampus"] and not world[pit]["gold"] and not world[pit]["pit"]:
+            world[pit]["pit"] = True
+            placed += 1
+
+    # Configure Sensors
+    for (i,j) in world:
+        if world[(i,j)]["wampus"]:
+            for adj in get_adjacent(i,j,n):
+                sensors[adj]["stench"] = True
+        if world[(i,j)]["pit"]:
+            for adj in get_adjacent(i,j,n):
+                sensors[adj]["breeze"] = True
+
+    return n, world, sensors, start
+
+def get_adjacent(i,j,n):
+    adj = []
+    if i > 1: adj.append((i-1,j))
+    if i < n: adj.append((i+1,j))
+    if j > 1: adj.append((i,j-1))
+    if j < n: adj.append((i,j+1))
+    return adj
+
+# ==============================
+# MOVEMENT FUNCTIONS
+# ==============================
+
+def turn_left(direction):
+    dirs = ["UP","LEFT","DOWN","RIGHT"]
+    return dirs[(dirs.index(direction)+1)%4]
+
+def turn_right(direction):
+    dirs = ["UP","RIGHT","DOWN","LEFT"]
+    return dirs[(dirs.index(direction)+1)%4]
+
+def move_forward(position, direction, n):
+    x,y = position
+    if direction == "UP": x -= 1
+    elif direction == "DOWN": x += 1
+    elif direction == "LEFT": y -= 1
+    elif direction == "RIGHT": y += 1
+
+    if x < 1 or x > n or y < 1 or y > n:
+        print("\nBUMP! You hit a wall.")
+        return position, True
+    return (x,y), False
+
+# ==============================
+# SHOOT FUNCTION
+# ==============================
+
+def shoot_arrow(position, direction, world, n):
+    x,y = position
+    while True:
+        if direction == "UP": x -= 1
+        elif direction == "DOWN": x += 1
+        elif direction == "LEFT": y -= 1
+        elif direction == "RIGHT": y += 1
+
+        if x < 1 or x > n or y < 1 or y > n: break
+        if world[(x,y)]["wampus"]:
+            world[(x,y)]["wampus"] = False
+            print("\nSCREAM! Wampus died.")
+            return True
+    print("\nArrow missed.")
+    return False
+
+# ==============================
+# UPDATED DISPLAY FUNCTION
+# ==============================
+
+def display_world(world, n, position, direction):
+    # Icons for agent orientation
+    icons = {"UP": "^", "DOWN": "v", "LEFT": "<", "RIGHT": ">"}
+    agent_char = icons.get(direction, "A")
+
+    print("\n--- World Map ---")
+    for i in range(1, n+1):
+        row = []
+        for j in range(1, n+1):
+            if (i, j) == position:
+                row.append(agent_char)
+            else:
+                cell = world[(i,j)]
+                if cell["wampus"]: row.append("W")
+                elif cell["pit"]: row.append("P")
+                elif cell["gold"]: row.append("G")
+                else: row.append(".")
+        print(" ".join(row))
+    print("-----------------")
+
+# ==============================
+# GAME LOOP
+# ==============================
+
+def play_game():
+    n, world, sensors, position = create_world()
+    direction = "RIGHT"
+    score = 0
+    game_over = False
+
+    while not game_over:
+        display_world(world, n, position, direction)
+        print(f"Position: {position} | Facing: {direction} | Score: {score}")
+
+        # Show Sensors
+        if sensors[position]["stench"]: print(">> Stench detected!")
+        if sensors[position]["breeze"]: print(">> Breeze detected!")
+        if sensors[position]["glitter"]: print(">> Glitter detected!")
+
+        action = input("\nAction (forward, left, right, grab, shoot, exit): ").lower()
+
+        if action == "forward":
+            score -= 1
+            position, bump = move_forward(position, direction, n)
+        elif action == "left":
+            score -= 1
+            direction = turn_left(direction)
+        elif action == "right":
+            score -= 1
+            direction = turn_right(direction)
+        elif action == "grab":
+            score -= 1
+            if sensors[position]["glitter"]:
+                print("Gold grabbed! You win!")
+                world[position]["gold"] = False
+                sensors[position]["glitter"] = False
+                score += 1000
+                game_over = True
+            else:
+                print("No gold here.")
+        elif action == "shoot":
+            score -= 1
+            killed = shoot_arrow(position, direction, world, n)
+            if killed: score += 500
+        elif action == "exit":
+            break
+        else:
+            print("Invalid action.")
+
+        # Check Death Conditions (only if game isn't already won by grabbing gold)
+        if not game_over:
+            if world[position]["wampus"]:
+                display_world(world, n, position, direction)
+                print("You were eaten by Wampus!")
+                score -= 10
+                game_over = True
+            elif world[position]["pit"]:
+                display_world(world, n, position, direction)
+                print("You fell into a Pit!")
+                score -= 10
+                game_over = True
+
+    print("\nGAME OVER")
+    print("Final Score:", score)
+
+if __name__ == "__main__":
+    play_game()
+
+
+output:
+
+Enter number of rooms (>=4): 4
+
+World Map (Hidden hazards):
+. . . .
+P . P P
+. . W G
+. . . .
+
+
+Current Position: (1, 1)
+Facing: RIGHT
+Score: 0
+Breeze detected!
+Action (forward, left, right, grab, shoot, exit): forward
+
+Current Position: (1, 2)
+Facing: RIGHT
+Score: 0
+Action (forward, left, right, grab, shoot, exit): right
+
+Current Position: (1, 2)
+Facing: DOWN
+Score: 0
+Action (forward, left, right, grab, shoot, exit): forward
+
+Current Position: (2, 2)
+Facing: DOWN
+Score: 0
+Breeze detected!
+Action (forward, left, right, grab, shoot, exit): forward
+
+Current Position: (3, 2)
+Facing: DOWN
+Score: 0
+Stench detected!
+Action (forward, left, right, grab, shoot, exit): left
+
+Current Position: (3, 2)
+Facing: RIGHT
+Score: 0
+Stench detected!
+Action (forward, left, right, grab, shoot, exit): shoot
+SCREAM! Wampus died.
+
+Current Position: (3, 2)
+Facing: RIGHT
+Score: 490
+Stench detected!
+Action (forward, left, right, grab, shoot, exit): forward
+
+Current Position: (3, 3)
+Facing: RIGHT
+Score: 490
+Breeze detected!
+Action (forward, left, right, grab, shoot, exit): forward
+
+Current Position: (3, 4)
+Facing: RIGHT
+Score: 490
+Stench detected!
+Breeze detected!
+Glitter detected!
+Action (forward, left, right, grab, shoot, exit): grab
+Gold grabbed! You win!
+
+GAME OVER
+Final Score: 1490
+Enter number of rooms (>=4): 4
+
+--- World Map ---
+> P G .
+. . W .
+. . . P
+. P . .
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: 0
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. > G .
+. . W .
+. . . P
+. P . .
+-----------------
+You fell into a Pit!
+
+GAME OVER
+Final Score: -1001
+
+
+
+Enter number of rooms (>=4): 6
+
+--- World Map ---
+> . . P . P
+. . . . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: 0
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. > . P . P
+. . . . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (1, 2) | Facing: RIGHT | Score: -1
+
+Action (forward, left, right, grab, shoot, exit): right
+
+--- World Map ---
+. v . P . P
+. . . . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (1, 2) | Facing: DOWN | Score: -2
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . P
+. v . . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 2) | Facing: DOWN | Score: -3
+
+Action (forward, left, right, grab, shoot, exit): left
+
+--- World Map ---
+. . . P . P
+. > . . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 2) | Facing: RIGHT | Score: -4
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . P
+. . > . . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 3) | Facing: RIGHT | Score: -5
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . P
+. . . > . G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 4) | Facing: RIGHT | Score: -6
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . P
+. . . . > G
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 5) | Facing: RIGHT | Score: -7
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . P
+. . . . . >
+. . . . . P
+. . P . . .
+. . P . . .
+P . . . P W
+-----------------
+Position: (2, 6) | Facing: RIGHT | Score: -8
+>> Breeze detected!
+>> Glitter detected!
+
+Action (forward, left, right, grab, shoot, exit): grab
+Gold grabbed! You win!
+
+GAME OVER
+Final Score: 991
+
+
+Enter number of rooms (>=4): 6
+
+--- World Map ---
+> . . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: 0
+
+Action (forward, left, right, grab, shoot, exit): left
+
+--- World Map ---
+^ . . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 1) | Facing: UP | Score: -1
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+BUMP! You hit a wall.
+
+--- World Map ---
+^ . . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 1) | Facing: UP | Score: -2
+
+Action (forward, left, right, grab, shoot, exit): right
+
+--- World Map ---
+> . . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: -3
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. > . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 2) | Facing: RIGHT | Score: -4
+
+Action (forward, left, right, grab, shoot, exit): right
+
+--- World Map ---
+. v . P . .
+. . P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (1, 2) | Facing: DOWN | Score: -5
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . .
+. v P . . .
+. . . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (2, 2) | Facing: DOWN | Score: -6
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . P . .
+. . P . . .
+. v . P . .
+P W . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (3, 2) | Facing: DOWN | Score: -7
+>> Stench detected!
+
+Action (forward, left, right, grab, shoot, exit): shoot
+
+SCREAM! Wampus died.
+
+--- World Map ---
+. . . P . .
+. . P . . .
+. v . P . .
+P . . . . .
+. . . . . .
+. P P P . G
+-----------------
+Position: (3, 2) | Facing: DOWN | Score: 483
+>> Stench detected!
+
+Action (forward, left, right, grab, shoot, exit): exit
+
+GAME OVER
+Final Score: 483
+
+
+Enter number of rooms (>=4): 6
+
+--- World Map ---
+> . . . . .
+P . P P . .
+. . P . . .
+W . . . . .
+. . . G P .
+P . . P . .
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: 0
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): right
+
+--- World Map ---
+v . . . . .
+P . P P . .
+. . P . . .
+W . . . . .
+. . . G P .
+P . . P . .
+-----------------
+Position: (1, 1) | Facing: DOWN | Score: -1
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . . . .
+v . P P . .
+. . P . . .
+W . . . . .
+. . . G P .
+P . . P . .
+-----------------
+You fell into a Pit!
+
+GAME OVER
+Final Score: -1002
+
+Enter number of rooms (>=4): 6
+
+--- World Map ---
+> . . . W .
+. . . P . P
+. P . . . .
+G . P P . .
+. P . . . P
+. . . . . .
+-----------------
+Position: (1, 1) | Facing: RIGHT | Score: 0
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. > . . W .
+. . . P . P
+. P . . . .
+G . P P . .
+. P . . . P
+. . . . . .
+-----------------
+Position: (1, 2) | Facing: RIGHT | Score: -1
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . > . W .
+. . . P . P
+. P . . . .
+G . P P . .
+. P . . . P
+. . . . . .
+-----------------
+Position: (1, 3) | Facing: RIGHT | Score: -2
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . > W .
+. . . P . P
+. . . P . P
+. P . . . .
+G . P P . .
+. P . . . .
+G . P P . .
+G . P P . .
+. P . . . P
+. . . . . .
+-----------------
+Position: (1, 4) | Facing: RIGHT | Score: -3
+>> Stench detected!
+>> Stench detected!
+>> Breeze detected!
+
+Action (forward, left, right, grab, shoot, exit): forward
+
+--- World Map ---
+. . . . > .
+. . . P . P
+. P . . . .
+G . P P . .
+. P . . . P
+. . . . . .
+-----------------
+You were eaten by Wampus!
+
+GAME OVER
+Final Score: -1004

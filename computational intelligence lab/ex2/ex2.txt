@@ -1,0 +1,169 @@
+class Heuristic:
+    def get_heuristic(self, goal):
+        for node in self.adjacency_List:
+            if node == goal:
+                self.h[node] = 0
+            else:
+                self.h[node] = int(input(f"h({node}) = "))
+
+    def a_star(self, start, goal):
+        if start not in self.adjacency_List or goal not in self.adjacency_List:
+          print("Invalid start or goal")
+          return None
+        self.get_heuristic(goal)
+        frontier = [([start], self.h[start])]
+        explored = []
+        i = 1
+
+        print("\nA* Traversal Table:")
+        print("Iter No | Frontier                                                  | Explored")
+        print("-" * 110)
+
+        while frontier:
+            frontier_list = [f"{path[-1]}({cost})" for path, cost in frontier]
+            explored_list = list(explored)
+
+            iter_str = f"{i:6}  "
+            fringe_str = f"{str(frontier_list):<55}"[:55]
+            explored_str = f"{str(explored_list):<50}"[:50]
+
+            print(f"{iter_str}| {fringe_str} | {explored_str}")
+
+            min_index = 0
+            for j in range(1, len(frontier)):
+                if frontier[j][1] < frontier[min_index][1]:
+                    min_index = j
+
+            path, f_cost = frontier.pop(min_index)
+            current = path[-1]
+
+            explored.append(current)
+
+            if current == goal:
+                print("-" * 110)
+                return path, f_cost
+
+            for child, w in self.adjacency_List[current]:
+                if child not in explored:
+                    new_f = f_cost + w + self.h[child] - self.h[current]
+                    new_path = path + [child]
+
+                    for k in range(len(frontier)):
+                        if frontier[k][0][-1] == child and new_f < frontier[k][1]:
+                            frontier[k] = (new_path, new_f)
+                            break
+                    else:
+                        frontier.append((new_path, new_f))
+
+            i += 1
+
+
+Enter undirected(0) graph:0
+
+Enter the number of nodes:9
+
+Enter the number of edges:10
+
+Enter the nodes:
+a
+
+Node 'a' added to the graph
+b
+
+Node 'b' added to the graph
+c
+
+Node 'c' added to the graph
+d
+
+Node 'd' added to the graph
+e
+
+Node 'e' added to the graph
+k
+
+Node 'k' added to the graph
+h
+
+Node 'h' added to the graph
+f
+
+Node 'f' added to the graph
+m
+
+Node 'm' added to the graph
+
+Enter the edges (u v cost):
+a b 8
+Edge 'a' -> 'b' (cost: 8.0) added
+a c 15
+Edge 'a' -> 'c' (cost: 15.0) added
+a d 7
+Edge 'a' -> 'd' (cost: 7.0) added
+b c 4
+Edge 'b' -> 'c' (cost: 4.0) added
+d e 12
+Edge 'd' -> 'e' (cost: 12.0) added
+e c 4
+Edge 'e' -> 'c' (cost: 4.0) added
+e k 9
+Edge 'e' -> 'k' (cost: 9.0) added
+e f 10
+Edge 'e' -> 'f' (cost: 10.0) added
+e h 8
+Edge 'e' -> 'h' (cost: 8.0) added
+f m 11
+Edge 'f' -> 'm' (cost: 11.0) added
+
+Created Graph
+
+1.Add Node
+2.Add Edge
+3.Delete Node
+4.Delete Edge
+5.Display Graph
+6.Display Node Adjacency List
+7.BFS(L-R)
+8.BFS(R-L)
+9.DFS(L-R)
+10.DFS(R-L)
+11.UCS
+12.a*
+13.Exit
+Enter your choice:12
+Enter the source node:a
+Enter the goal node:m
+h(a) = 16
+h(b) = 4
+h(c) = 9
+h(d) = 11
+h(e) = 4
+h(k) = 11
+h(h) = 12
+h(f) = 8
+
+A* Traversal Table:
+Iter No | Frontier                                                  | Explored
+--------------------------------------------------------------------------------------------------------------
+     1  | ['a(16)']                                               | []
+     2  | ['b(12.0)', 'c(24.0)', 'd(18.0)']                       | ['a']
+     3  | ['c(21.0)', 'd(18.0)']                                  | ['a', 'b']
+     4  | ['c(21.0)', 'e(23.0)']                                  | ['a', 'b', 'd']
+     5  | ['e(20.0)']                                             | ['a', 'b', 'd', 'c']
+     6  | ['k(36.0)', 'f(34.0)', 'h(36.0)']                       | ['a', 'b', 'd', 'c', 'e']
+     7  | ['k(36.0)', 'h(36.0)', 'm(37.0)']                       | ['a', 'b', 'd', 'c', 'e', 'f']
+     8  | ['h(36.0)', 'm(37.0)']                                  | ['a', 'b', 'd', 'c', 'e', 'f', 'k']
+     9  | ['m(37.0)']                                             | ['a', 'b', 'd', 'c', 'e', 'f', 'k', 'h']
+--------------------------------------------------------------------------------------------------------------
+A* Path: ['a', 'b', 'c', 'e', 'f', 'm']
+Total Cost (f): 37.0
+A star Path to m: a -> b -> c -> e -> f -> m, Total Cost: 37.0
+Enter your choice:3
+Ener the node to be deleted:m
+Edge 'm' - 'f' removed successfully
+Node 'm' deleted sucessfully
+Enter your choice:12
+Enter the source node:a
+Enter the goal node:m
+Invalid start or goal
+Goal not found
