@@ -1,0 +1,103 @@
+import numpy as np
+from tabulate import tabulate
+
+def activation_func(z, choice):
+    """Calculates output based on the chosen activation function."""
+    if choice == 'threshold':
+        return np.where(z >= 1, 1, 0)
+    if choice == 'threshold_bipolar':
+        return np.where(z >= 1, 1, -1)
+    if choice == 'sigmoid':
+        return 1 / (1 + np.exp(-z))
+    if choice == 'tanh':
+        return np.tanh(z)
+    return z
+
+def get_derivative(a, choice):
+    """Calculates derivative for delta rules (sigmoid/tanh only)."""
+    if choice == 'sigmoid':
+        return a * (1 - a)
+    if choice == 'tanh':
+        return 1 - a**2
+    return 1
+
+# 1. DATA ENTRY & INITIALIZATION
+rows = int(input("Enter number of rows: "))
+cols = int(input("Enter number of columns: "))
+
+print(f"\nEnter the {rows}x{cols} input matrix (space-separated):")
+X = np.array([[float(x) for x in input(f"Row {i+1}: ").split()] for i in range(rows)])
+
+print("\nEnter the target outputs (y):")
+y = np.array([[float(input(f"Target {i+1}: "))] for i in range(rows)])
+
+print(f"\nEnter initial weights ({cols} values, space-separated):")
+weights = np.array([[float(w)] for w in input().split()])
+bias = np.array([float(input("Enter initial bias: "))])
+
+lr = float(input("Enter learning rate (e.g., 0.1, 0.5): "))
+max_epochs = int(input("Enter maximum epochs: "))
+
+# 2. ACTIVATION SELECTION
+is_bipolar = -1 in X or -1 in y
+print(f"\n[Detected: {'Bipolar' if is_bipolar else 'Binary'}]")
+print(f"Options: {'threshold_bipolar, tanh' if is_bipolar else 'threshold, sigmoid, tanh'}")
+act_choice = input("Enter choice: ").lower()
+
+# 3. TRAINING LOOP
+for epoch in range(1, max_epochs + 1):
+    table_data = []
+    any_change_this_epoch = False  
+   
+    for i in range(rows):
+        # Setup inputs
+        xi = X[i:i+1]
+        target = y[i]
+       
+        # Forward Pass
+        net_input = np.dot(xi, weights) + bias
+        output = activation_func(net_input, act_choice)
+        error = target - output
+       
+        # Calculate Delta Updates
+        deriv = get_derivative(output, act_choice)
+        delta_w = (lr * error * deriv * xi).flatten()
+        delta_b = (lr * error * deriv).flatten()
+       
+        # Check Convergence (Small epsilon for floating point stability)
+        if np.any(np.abs(delta_w) > 1e-7) or np.abs(delta_b.item()) > 1e-7:
+            any_change_this_epoch = True
+       
+        # Update parameters immediately (Stochastic)
+        weights += delta_w.reshape(-1, 1)
+        bias += delta_b
+       
+        # Log results for the table
+        table_data.append([
+            xi.flatten(),
+            target.item(),
+            round(net_input.item(), 4),
+            round(output.item(), 4),
+            np.round(delta_w, 4),
+            round(delta_b.item(), 4),
+            np.round(weights.flatten(), 4),
+            round(bias.item(), 4)
+        ])
+
+    # Display Epoch Table
+    print(f"\n--- Epoch {epoch} ---")
+    headers = ['X', 'Target', 'Net', 'Out', 'ΔW', 'Δb', 'New W', 'New b']
+    print(tabulate(table_data, headers=headers, tablefmt='grid'))
+
+    # Break if no updates happened during the entire pass
+    if not any_change_this_epoch:
+        print(f"\n[Converged: No updates in Epoch {epoch}]")
+        break
+else:
+    print(f"\n[Reached Max Epochs: {max_epochs}]")
+
+print("\n" + "="*30)
+print("FINAL PARAMETERS")
+print("="*30)
+print(f"Weights: {weights.flatten()}")
+print(f"Bias:    {bias.item()}")
